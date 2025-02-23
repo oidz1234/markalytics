@@ -5,6 +5,7 @@ import apachelogs
 import geoip2.database
 import jinja2
 import os
+import re
 from urllib.parse import urlparse, unquote, parse_qs
 from user_agents import parse as ua_parse
 
@@ -16,6 +17,28 @@ def clean_post_name(path, prefixes):
             return unquote(post_name)
     return path
 
+def get_recent_log_files(base_log_name, directory, days_back=7):
+    """Find log files from the last 7 days based on the date in the filename."""
+    seven_days_ago = datetime.now().date() - timedelta(days=days_back)
+    log_files = []
+    # Regex to match logname-YYYYMMDD
+    pattern = re.compile(rf"{re.escape(base_log_name)}-\d{{8}}$")
+    
+    for filename in os.listdir(directory):
+        if pattern.match(filename):
+            # Extract date from filename (e.g., 20250223)
+            date_str = filename.split('-')[-1]
+            try:
+                log_date = datetime.strptime(date_str, '%Y%m%d').date()
+                if log_date >= seven_days_ago:
+                    log_files.append(os.path.join(directory, filename))
+            except ValueError:
+                continue  # Skip if date parsing fails
+    
+    # Sort by date (newest first)
+    log_files.sort(key=lambda x: x.split('-')[-1], reverse=True)
+    return log_files
+
 def main():
     # Load configuration
     with open('config.json') as f:
@@ -23,6 +46,15 @@ def main():
 
     # Initialize GeoIP reader
     reader = geoip2.database.Reader(config['geoip_db'])
+
+    # Time filter for the last 7 days
+    seven_days_ago = datetime.now() - timedelta(days=7)
+
+    # Get base log name and directory (assuming config['log_files'][0] is a full path)
+    base_log_path = config['log_files'][0]  # e.g., '/var/log/logname-20250223'
+    directory = os.path.dirname(base_log_path) or '.'  # Extract directory, default to current if none
+    base_log_name = base_log_path.split('/')[-1].split('-')[0]  # Extract 'logname'
+    log_files = get_recent_log_files(base_log_name, directory)
 
     # Initialize data structures
     daily_unique_visitors = defaultdict(set)
@@ -37,20 +69,16 @@ def main():
     rss_user_agent_counts = defaultdict(int)
     hourly_visits = defaultdict(int)
 
-    # Time filters
-    thirty_days_ago = datetime.now() - timedelta(days=30)
-    twenty_four_hours_ago = datetime.now() - timedelta(hours=24)
-
-    # Create log parser for Combined Log Format
+    # Create log parser
     parser = apachelogs.LogParser(apachelogs.COMBINED)
 
     # Process each log file
-    for log_file in config['log_files']:
-        with open(log_file) as f:
+    for log_file in log_files:
+        with open(log_file, 'r') as f:
             for line in f:
                 try:
                     entry = parser.parse(line)
-                    if entry.request_time.replace(tzinfo=None) < thirty_days_ago:
+                    if entry.request_time.replace(tzinfo=None) < seven_days_ago:
                         continue
                     date_str = entry.request_time.strftime('%Y-%m-%d')
                     request_parts = entry.request_line.split()
@@ -66,7 +94,7 @@ def main():
                     browser_counts[browser] += 1
                     os_counts[os_family] += 1
 
-                    # Count hourly visits (0-23)
+                    # Count hourly visits
                     hour = entry.request_time.hour
                     hourly_visits[hour] += 1
 
@@ -98,7 +126,8 @@ def main():
                         if country_name != "Unknown":
                             country_visits[country_name] += 1
 
-                    # RSS feed access (last 24 hours only for list)
+                    # RSS feed access
+                    twenty_four_hours_ago = datetime.now() - timedelta(hours=24)
                     if path in config['rss_feed_urls']:
                         if entry.request_time.replace(tzinfo=None) >= twenty_four_hours_ago:
                             rss_user_agent_counts[user_agent_str] += 1
@@ -108,25 +137,21 @@ def main():
                 except apachelogs.InvalidEntryError:
                     continue
 
-    # Compute final stats
+    # Compute final stats for the last 7 days
+    today = datetime.now().date()
+    dates = [today - timedelta(days=i) for i in range(7)][::-1]
+    date_strs = [d.strftime('%Y-%m-%d') for d in dates]
     daily_unique_visitors_counts = {d: len(s) for d, s in daily_unique_visitors.items()}
     daily_rss_unique_counts = {d: len(s) for d, s in daily_rss_unique_ips.items()}
+    daily_visitors = [daily_unique_visitors_counts.get(d, 0) for d in date_strs]
+    daily_rss_unique = [daily_rss_unique_counts.get(d, 0) for d in date_strs]
+    daily_scraper_pageviews_list = [daily_scraper_pageviews.get(d, 0) for d in date_strs]
     top_blog_posts = sorted(blog_post_views.items(), key=lambda x: x[1], reverse=True)[:10]
     sorted_browsers = sorted(browser_counts.items(), key=lambda x: x[1], reverse=True)
     sorted_os = sorted(os_counts.items(), key=lambda x: x[1], reverse=True)
     sorted_utm_sources = sorted(utm_source_counts.items(), key=lambda x: x[1], reverse=True)
     sorted_rss_user_agents = sorted(rss_user_agent_counts.items(), key=lambda x: x[1], reverse=True)
     hourly_data = [hourly_visits[h] for h in range(24)]
-
-    # Generate list of last 30 dates
-    today = datetime.now().date()
-    dates = [today - timedelta(days=i) for i in range(30)][::-1]
-    date_strs = [d.strftime('%Y-%m-%d') for d in dates]
-    daily_visitors = [daily_unique_visitors_counts.get(d, 0) for d in date_strs]
-    daily_rss_unique = [daily_rss_unique_counts.get(d, 0) for d in date_strs]
-    daily_scraper_pageviews_list = [daily_scraper_pageviews.get(d, 0) for d in date_strs]
-
-    # Prepare country data for pie chart
     country_data = [{'name': country, 'value': count} for country, count in country_visits.items()]
 
     # Prepare template context
@@ -151,7 +176,7 @@ def main():
     template = env.get_template('dashboard.html')
     html = template.render(context)
 
-    # Write dashboard to output directory
+    # Write dashboard
     output_dir = config['output_dir']
     os.makedirs(output_dir, exist_ok=True)
     with open(os.path.join(output_dir, 'index.html'), 'w') as f:
