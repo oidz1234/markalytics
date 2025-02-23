@@ -26,9 +26,8 @@ def get_date_range(days_back=7):
     date_patterns = [d.strftime(r'\[%d/%b/%Y') for d in dates]
     return dates, date_patterns
 
-def process_log_file(log_file, date_patterns, seven_days_ago):
+def process_log_file(log_file, date_patterns, seven_days_ago, geoip_db_path):
     """Process a single log file, returning stats for matching entries."""
-    # Local stats to avoid threading conflicts
     local_unique_visitors = defaultdict(set)
     local_pageviews = defaultdict(int)
     local_blog_views = defaultdict(int)
@@ -46,10 +45,9 @@ def process_log_file(log_file, date_patterns, seven_days_ago):
     log_entry_regex = re.compile(full_pattern)
     
     parser = apachelogs.LogParser(apachelogs.COMBINED)
-    reader = geoip2.database.Reader('GeoLite2-Country.mmdb')  # Move reader here for thread safety
+    reader = geoip2.database.Reader(geoip_db_path)  # Use config path
     
     with open(log_file, 'r') as f:
-        # Read in chunks for speed
         chunk_size = 65536  # 64KB
         buffer = ""
         while True:
@@ -64,7 +62,7 @@ def process_log_file(log_file, date_patterns, seven_days_ago):
                 break
             buffer += chunk
             lines = buffer.split('\n')
-            buffer = lines[-1]  # Keep incomplete line
+            buffer = lines[-1]
             for line in lines[:-1]:
                 process_buffer(line, log_entry_regex, parser, reader,
                               local_unique_visitors, local_pageviews, local_blog_views,
@@ -106,7 +104,7 @@ def process_buffer(line, regex, parser, reader, unique_visitors, pageviews, blog
                 if 'utm_source' in params:
                     utm_counts[params['utm_source'][0]] += 1
 
-            if any(path.startswith('/static/') for _ in range(1)):  # Simplified placeholder
+            if any(path.startswith(ex) for ex in ['/static/']):  # Placeholder, replace with config
                 return
 
             if ua.is_bot:
@@ -114,7 +112,7 @@ def process_buffer(line, regex, parser, reader, unique_visitors, pageviews, blog
             else:
                 pageviews[date_str] += 1
                 unique_visitors[date_str].add(entry.remote_host)
-                if any(path.startswith('/blog/') for _ in range(1)):  # Simplified placeholder
+                if any(path.startswith(bp) for bp in ['/blog/']):  # Placeholder, replace with config
                     clean_name = clean_post_name(path, ['/blog/'])
                     blog_views[clean_name] += 1
                 try:
@@ -126,7 +124,7 @@ def process_buffer(line, regex, parser, reader, unique_visitors, pageviews, blog
                     pass
 
             twenty_four_hours_ago = datetime.now() - timedelta(hours=24)
-            if path == '/rss/':  # Simplified placeholder
+            if path in ['/rss/']:  # Placeholder, replace with config
                 if entry.request_time.replace(tzinfo=None) >= twenty_four_hours_ago:
                     rss_ua_counts[user_agent_str] += 1
                 if not ua.is_bot:
@@ -155,11 +153,11 @@ def main():
     with open('config.json') as f:
         config = json.load(f)
 
+    geoip_db_path = config['geoip_db']  # Use the path from your config
     base_log_path = config['log_files'][0]
     directory = os.path.dirname(base_log_path) or '.'
     seven_days_ago_timestamp = (datetime.now() - timedelta(days=6)).timestamp()
     
-    # Pre-filter files by modification time
     log_files = [f for f in glob.glob(os.path.join(directory, "django_access*"))
                  if os.path.getmtime(f) >= seven_days_ago_timestamp]
     print(f"Filtered files: {log_files}")
@@ -167,9 +165,8 @@ def main():
     dates, date_patterns = get_date_range()
     seven_days_ago = datetime.now() - timedelta(days=6)
 
-    # Parallel processing
     with ThreadPoolExecutor() as executor:
-        futures = [executor.submit(process_log_file, log_file, date_patterns, seven_days_ago)
+        futures = [executor.submit(process_log_file, log_file, date_patterns, seven_days_ago, geoip_db_path)
                    for log_file in log_files]
         results = [future.result() for future in futures]
 
