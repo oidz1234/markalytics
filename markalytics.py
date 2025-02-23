@@ -16,12 +16,13 @@ def clean_post_name(path, prefixes):
     for prefix in prefixes:
         if path.startswith(prefix):
             post_name = path[len(prefix):]
+            post_name = re.sub(r'(/preview|/edit)$', '', post_name)  # Strip preview/edit
             return unquote(post_name)
     return path
 
 def get_date_range(days_back=7):
     today = datetime.now().date()
-    dates = [today - timedelta(days=i) for i in range(days_back)][::-1]
+    dates = [today - timedelta(days=i) for i in range(days_back - 1, -1, -1)]
     date_patterns = [d.strftime(r'\[%d/%b/%Y') for d in dates]
     return dates, date_patterns
 
@@ -152,14 +153,13 @@ def main():
     geoip_db_path = config['geoip_db']
     base_log_path = config['log_files'][0]
     directory = os.path.dirname(base_log_path) or '.'
-    seven_days_ago_timestamp = (datetime.now() - timedelta(days=6)).timestamp()
+    seven_days_ago_timestamp = (datetime.now() - timedelta(days=7)).timestamp()
     
     log_files = [f for f in glob.glob(os.path.join(directory, "django_access*"))
                  if os.path.getmtime(f) >= seven_days_ago_timestamp]
-    print(f"Filtered files: {log_files}")
 
     dates, date_patterns = get_date_range()
-    seven_days_ago = datetime.now() - timedelta(days=6)
+    seven_days_ago = datetime.now() - timedelta(days=7)
 
     with ThreadPoolExecutor() as executor:
         futures = [executor.submit(process_log_file, log_file, date_patterns, seven_days_ago, geoip_db_path, config)
@@ -169,10 +169,6 @@ def main():
     (daily_unique_visitors, daily_pageviews, blog_post_views, country_visits,
      daily_rss_unique_ips, daily_scraper_pageviews, browser_counts, os_counts,
      utm_source_counts, rss_user_agent_counts, hourly_visits) = merge_stats(results)
-
-    # Debug prints to check data
-    print("Blog post views:", dict(blog_post_views))
-    print("RSS unique IPs:", {k: len(v) for k, v in daily_rss_unique_ips.items()})
 
     date_strs = [d.strftime('%Y-%m-%d') for d in dates]
     daily_visitors = [len(daily_unique_visitors.get(d, set())) for d in date_strs]
