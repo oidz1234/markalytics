@@ -1,0 +1,8 @@
+{
+    "log_files": ["django_access.log"],
+    "output_dir": "./analytics",
+    "geoip_db": "/usr/share/GeoIP/GeoLite2-Country.mmdb",
+    "blog_post_prefixes": ["/blog/post/"],
+    "rss_feed_urls": ["/blog/rss"],
+    "excluded_prefixes": ["/static/", "/images/", "/css/", "/js/"]
+}

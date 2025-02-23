@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Markalytics Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+    <style>
+        body {
+            background: linear-gradient(45deg, #ff00cc, #33ccff, #ffcc00, #00ff99);
+            background-size: 400% 400%;
+            animation: gradientShift 15s ease infinite;
+            font-family: 'Courier New', Courier, monospace;
+            color: #fff;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 {
+            font-size: 2.5em;
+            text-align: center;
+            color: #fff;
+            text-shadow: 2px 2px 4px #000;
+            animation: neonFlicker 1.5s infinite alternate;
+            text-transform: uppercase;
+            letter-spacing: 5px;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 15px;
+            box-shadow: 0 0 15px #ff00ff;
+            width: 90%;
+            max-width: 1200px;
+            margin: 0 auto 30px auto;
+        }
+        .chart-container {
+            width: 90%;
+            max-width: 1200px;
+            height: 400px;
+            margin: 0 auto 30px auto;
+            background: rgba(0, 0, 0, 0.7);
+            border: 3px solid #ff00ff;
+            border-radius: 15px;
+            box-shadow: 0 0 20px #00ffff;
+        }
+        .chart-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            width: 90%;
+            max-width: 1200px;
+            margin: 0 auto 30px auto;
+        }
+        .chart-grid .chart-container {
+            height: 400px;
+            background: rgba(0, 0, 0, 0.7);
+            border: 3px solid #ff00ff;
+            border-radius: 15px;
+            box-shadow: 0 0 20px #00ffff;
+        }
+        .section-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            width: 90%;
+            max-width: 1200px;
+            margin: 0 auto 30px auto;
+        }
+        .section-grid .section {
+            background: rgba(0, 0, 0, 0.7);
+            border: 3px solid #ff00ff;
+            border-radius: 15px;
+            box-shadow: 0 0 20px #00ffff;
+            padding: 20px;
+        }
+        .section h2 {
+            color: #ff00ff;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            animation: neonFlicker 1.5s infinite alternate;
+        }
+        .scrollable-table {
+            max-height: 300px;
+            overflow-y: scroll;
+            scrollbar-width: thin;
+        }
+        .scrollable-table::-webkit-scrollbar {
+            width: 8px;
+        }
+        .scrollable-table::-webkit-scrollbar-thumb {
+            background: linear-gradient(45deg, #ff00cc, #33ccff, #ffcc00, #00ff99);
+            border-radius: 4px;
+            animation: rainbowScroll 3s infinite;
+        }
+        .scrollable-table::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.5);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            color: #fff;
+        }
+        th, td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #33ccff;
+        }
+        th {
+            background: rgba(255, 0, 255, 0.2);
+        }
+        td {
+            word-wrap: break-word;
+            max-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        footer {
+            text-align: center;
+            color: #fff;
+            margin-top: 20px;
+            width: 90%;
+            max-width: 1200px;
+            margin: 20px auto;
+        }
+        @keyframes gradientShift {
+            0% { background-position: 0% 0%; }
+            50% { background-position: 100% 100%; }
+            100% { background-position: 0% 0%; }
+        }
+        @keyframes neonFlicker {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.8; }
+        }
+        @keyframes rainbowScroll {
+            0% { background-position: 0% 0%; }
+            50% { background-position: 100% 100%; }
+            100% { background-position: 0% 0%; }
+        }
+    </style>
+</head>
+<body>
+    <h1>Markalytics Dashboard</h1>
+
+    <div class="chart-container" id="visitor-trend"></div>
+    <div class="chart-grid">
+        <div class="chart-container" id="rss-unique"></div>
+        <div class="chart-container" id="scraper-pageviews"></div>
+    </div>
+    <div class="chart-container" id="top-posts"></div>
+    <div class="chart-container" id="country-distribution"></div>
+    <div class="chart-container" id="visitor-hourly-bar"></div>
+
+    <div class="section-grid">
+        <div class="section browsers">
+            <h2>Browsers List</h2>
+            <div class="scrollable-table">
+                <table>
+                    <tr>
+                        <th>Browser</th>
+                        <th>Count</th>
+                    </tr>
+                    {% for browser, count in browsers %}
+                    <tr>
+                        <td>{{ browser }}</td>
+                        <td>{{ count }}</td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
+        </div>
+        <div class="section operating-systems">
+            <h2>Operating Systems List</h2>
+            <div class="scrollable-table">
+                <table>
+                    <tr>
+                        <th>OS</th>
+                        <th>Count</th>
+                    </tr>
+                    {% for os, count in operating_systems %}
+                    <tr>
+                        <td>{{ os }}</td>
+                        <td>{{ count }}</td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="section-grid">
+        <div class="section utm-sources">
+            <h2>UTM Sources List</h2>
+            <div class="scrollable-table">
+                <table>
+                    <tr>
+                        <th>UTM Source</th>
+                        <th>Count</th>
+                    </tr>
+                    {% for source, count in utm_sources %}
+                    <tr>
+                        <td>{{ source }}</td>
+                        <td>{{ count }}</td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
+        </div>
+        <div class="section rss-readers">
+            <h2>RSS Readers List</h2>
+            <div class="scrollable-table">
+                <table>
+                    <tr>
+                        <th>RSS Reader</th>
+                        <th>Count</th>
+                    </tr>
+                    {% for agent, count in rss_user_agents %}
+                    <tr>
+                        <td title="{{ agent }}">{{ agent[:50] }}{% if agent|length > 50 %}...{% endif %}</td>
+                        <td>{{ count }}</td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <footer>Generated at: {{ generated_at }}</footer>
+
+    <script>
+        // Initialize charts after page load
+        window.onload = function() {
+            // Visitor Trend
+            var visitorTrendChart = echarts.init(document.getElementById('visitor-trend'));
+            visitorTrendChart.setOption({
+                title: { text: '30-Day Visitor Trend', left: 'center', textStyle: { color: '#ff00ff', fontSize: 18, shadowColor: '#000', shadowOffsetX: 2, shadowOffsetY: 2, shadowBlur: 5 } },
+                tooltip: {},
+                xAxis: { type: 'category', data: {{ daily_dates | tojson }}, axisLabel: { rotate: 45, color: '#00ffff' } },
+                yAxis: { type: 'value', name: 'Unique Visitors', nameTextStyle: { color: '#ffcc00' }, axisLabel: { color: '#ffcc00' }, min: 0, axisTick: { show: false }, splitLine: { show: true, lineStyle: { color: '#333' } } },
+                series: [{ 
+                    data: {{ daily_visitors | tojson }}, 
+                    type: 'bar', 
+                    name: 'Visitors',
+                    itemStyle: { color: '#00ff99' }
+                }]
+            });
+
+            // RSS Unique IPs
+            var rssUniqueChart = echarts.init(document.getElementById('rss-unique'));
+            rssUniqueChart.setOption({
+                title: { text: 'Daily Unique RSS Accesses', left: 'center', textStyle: { color: '#ff00ff', fontSize: 18, shadowColor: '#000', shadowOffsetX: 2, shadowOffsetY: 2, shadowBlur: 5 } },
+                tooltip: {},
+                xAxis: { type: 'category', data: {{ daily_dates | tojson }}, axisLabel: { rotate: 45, color: '#ff00ff' } },
+                yAxis: { type: 'value', name: 'Unique IPs', nameTextStyle: { color: '#ff00cc' }, axisLabel: { color: '#ff00cc' }, min: 0, axisTick: { show: false }, splitLine: { show: true, lineStyle: { color: '#333' } } },
+                series: [{ 
+                    data: {{ daily_rss_unique | tojson }}, 
+                    type: 'bar', 
+                    name: 'RSS Unique IPs',
+                    itemStyle: { color: '#ffcc00' }
+                }]
+            });
+
+            // Scraper Pageviews
+            var scraperChart = echarts.init(document.getElementById('scraper-pageviews'));
+            scraperChart.setOption({
+                title: { text: 'Daily Scraper Pageviews', left: 'center', textStyle: { color: '#ff00ff', fontSize: 18, shadowColor: '#000', shadowOffsetX: 2, shadowOffsetY: 2, shadowBlur: 5 } },
+                tooltip: {},
+                xAxis: { type: 'category', data: {{ daily_dates | tojson }}, axisLabel: { rotate: 45, color: '#ff00ff' } },
+                yAxis: { type: 'value', name: 'Pageviews', nameTextStyle: { color: '#ff00cc' }, axisLabel: { color: '#ff00cc' }, min: 0, axisTick: { show: false }, splitLine: { show: true, lineStyle: { color: '#333' } } },
+                series: [{ 
+                    data: {{ daily_scraper_pageviews | tojson }}, 
+                    type: 'bar', 
+                    name: 'Scraper Pageviews',
+                    itemStyle: { color: '#ff5555' }
+                }]
+            });
+
+            // Top 10 Blog Posts
+            var topPostsChart = echarts.init(document.getElementById('top-posts'));
+            topPostsChart.setOption({
+                title: { text: 'Top 10 Blog Posts by Views', left: 'center', textStyle: { color: '#ff00ff', fontSize: 18, shadowColor: '#000', shadowOffsetX: 2, shadowOffsetY: 2, shadowBlur: 5 } },
+                tooltip: {},
+                xAxis: { type: 'category', data: {{ top_posts_labels | tojson }}, axisLabel: { rotate: 45, color: '#ff00cc', interval: 0 } },
+                yAxis: { type: 'value', name: 'Views', nameTextStyle: { color: '#33ccff' }, axisLabel: { color: '#33ccff' }, min: 0, axisTick: { show: false }, splitLine: { show: true, lineStyle: { color: '#333' } } },
+                series: [{ 
+                    data: {{ top_posts_data | tojson }}, 
+                    type: 'bar', 
+                    name: 'Views',
+                    itemStyle: { color: '#ff00ff' }
+                }]
+            });
+
+            // Country Distribution (Pie Chart)
+            var countryChart = echarts.init(document.getElementById('country-distribution'));
+            countryChart.setOption({
+                title: { text: 'Visitor Country Distribution', left: 'center', textStyle: { color: '#ff00ff', fontSize: 18, shadowColor: '#000', shadowOffsetX: 2, shadowOffsetY: 2, shadowBlur: 5 } },
+                tooltip: {},
+                series: [{
+                    type: 'pie',
+                    radius: ['40%', '70%'],
+                    data: {{ country_data | tojson }},
+                    itemStyle: { borderRadius: 10, borderColor: '#fff', borderWidth: 2 },
+                    label: { show: true, color: '#fff' },
+                    emphasis: { itemStyle: { shadowBlur: 20, shadowColor: '#ff00ff' } }
+                }]
+            });
+
+            // Visitor Hourly Bar Chart
+            var hourlyBarChart = echarts.init(document.getElementById('visitor-hourly-bar'));
+            hourlyBarChart.setOption({
+                title: { text: 'Visitor Time-of-Day', left: 'center', textStyle: { color: '#ff00ff', fontSize: 18, shadowColor: '#000', shadowOffsetX: 2, shadowOffsetY: 2, shadowBlur: 5 } },
+                tooltip: {},
+                xAxis: {
+                    type: 'category',
+                    data: Array.from({length: 24}, (_, i) => i + ':00')
+                },
+                yAxis: {
+                    type: 'value',
+                    name: 'Visits',
+                    nameTextStyle: { color: '#ffcc00' },
+                    axisLabel: { color: '#ffcc00' },
+                    min: 0,
+                    axisTick: { show: false },
+                    splitLine: { show: true, lineStyle: { color: '#333' } }
+                },
+                series: {
+                    name: 'Visits',
+                    type: 'bar',
+                    data: {{ hourly_data | tojson }},
+                    itemStyle: { color: '#00ff99' }
+                }
+            });
+
+            // Resize charts on window resize
+            window.onresize = function() {
+                visitorTrendChart.resize();
+                rssUniqueChart.resize();
+                scraperChart.resize();
+                topPostsChart.resize();
+                countryChart.resize();
+                hourlyBarChart.resize();
+            };
+        };
+    </script>
+</body>
+</html>
