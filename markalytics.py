@@ -6,6 +6,7 @@ import geoip2.database
 import jinja2
 import os
 import re
+import glob
 from urllib.parse import urlparse, unquote, parse_qs
 from user_agents import parse as ua_parse
 
@@ -16,43 +17,55 @@ def clean_post_name(path, prefixes):
             return unquote(post_name)
     return path
 
-def get_recent_log_files(base_log_name, directory, days_back=7):
-    """Find log files from the last 7 days based on the date in the filename."""
+def get_date_range(days_back=7):
+    """Generate date strings for the last 7 days in Apache log format."""
     today = datetime.now().date()
-    seven_days_ago = today - timedelta(days=days_back - 1)  # Adjusted to include today
-    log_files = []
-    pattern = re.compile(rf"{re.escape(base_log_name)}-\d{{8}}$")
+    dates = [today - timedelta(days=i) for i in range(days_back)][::-1]  # e.g., Feb 17-23
+    # Format as Apache log: [DD/Mon/YYYY
+    date_patterns = [d.strftime(r'\[%d/%b/%Y') for d in dates]  # e.g., \[17/Feb/2025
+    return dates, date_patterns
+
+def process_log_files(directory, base_pattern="django_access*"):
+    """Search log files for entries within the last 7 days using regex."""
+    dates, date_patterns = get_date_range()
+    seven_days_ago = datetime.now() - timedelta(days=6)  # 7 days including today
     
-    print(f"Looking for logs from {seven_days_ago} to {today}")
-    for filename in os.listdir(directory):
-        if pattern.match(filename):
-            date_str = filename.split('-')[-1]
-            try:
-                log_date = datetime.strptime(date_str, '%Y%m%d').date()
-                if log_date >= seven_days_ago and log_date <= today:
-                    log_files.append(os.path.join(directory, filename))
-                    print(f"Found: {filename} (Date: {log_date})")
-                else:
-                    print(f"Skipped: {filename} (Date: {log_date} outside range)")
-            except ValueError:
-                print(f"Invalid date in filename: {filename}")
-                continue
+    # Apache log timestamp pattern: [DD/Mon/YYYY:HH:MM:SS +ZZZZ]
+    # Build regex for any of the 7 days
+    date_regex = '|'.join(date_patterns)  # e.g., \[17/Feb/2025|\[18/Feb/2025|...
+    full_pattern = rf"({date_regex}:\d{{2}}:\d{{2}}:\d{{2}} \+\d{{4}})"
+    log_entry_regex = re.compile(full_pattern)
     
-    log_files.sort(key=lambda x: x.split('-')[-1], reverse=True)
-    print(f"Processing files: {log_files}")
-    return log_files
+    log_files = glob.glob(os.path.join(directory, base_pattern))
+    print(f"Found files: {log_files}")
+    
+    parser = apachelogs.LogParser(apachelogs.COMBINED)
+    matching_entries = []
+    
+    for log_file in log_files:
+        print(f"Scanning {log_file}...")
+        with open(log_file, 'r') as f:
+            for line in f:
+                if log_entry_regex.search(line):
+                    try:
+                        entry = parser.parse(line)
+                        if entry.request_time.replace(tzinfo=None) >= seven_days_ago:
+                            matching_entries.append((entry, line))
+                    except apachelogs.InvalidEntryError:
+                        continue
+    
+    return matching_entries, dates
 
 def main():
     with open('config.json') as f:
         config = json.load(f)
 
     reader = geoip2.database.Reader(config['geoip_db'])
-    seven_days_ago = datetime.now() - timedelta(days=6)  # 7 days including today
-
+    
+    # Assume directory from config or default to current
     base_log_path = config['log_files'][0]
     directory = os.path.dirname(base_log_path) or '.'
-    base_log_name = base_log_path.split('/')[-1].split('-')[0]
-    log_files = get_recent_log_files(base_log_name, directory)
+    log_entries, dates = process_log_files(directory, base_pattern="django_access*")
 
     daily_unique_visitors = defaultdict(set)
     daily_pageviews = defaultdict(int)
@@ -66,68 +79,55 @@ def main():
     rss_user_agent_counts = defaultdict(int)
     hourly_visits = defaultdict(int)
 
-    parser = apachelogs.LogParser(apachelogs.COMBINED)
+    for entry, _ in log_entries:
+        date_str = entry.request_time.strftime('%Y-%m-%d')
+        request_parts = entry.request_line.split()
+        if len(request_parts) < 2:
+            continue
+        path = urlparse(request_parts[1]).path
+        user_agent_str = entry.headers_in.get('User-Agent') or ''
+        ua = ua_parse(user_agent_str)
 
-    for log_file in log_files:
-        with open(log_file, 'r') as f:
-            for line in f:
-                try:
-                    entry = parser.parse(line)
-                    if entry.request_time.replace(tzinfo=None) < seven_days_ago:
-                        continue
-                    date_str = entry.request_time.strftime('%Y-%m-%d')
-                    request_parts = entry.request_line.split()
-                    if len(request_parts) < 2:
-                        continue
-                    path = urlparse(request_parts[1]).path
-                    user_agent_str = entry.headers_in.get('User-Agent') or ''
-                    ua = ua_parse(user_agent_str)
+        browser = ua.browser.family or "Unknown"
+        os_family = ua.os.family or "Unknown"
+        browser_counts[browser] += 1
+        os_counts[os_family] += 1
+        hour = entry.request_time.hour
+        hourly_visits[hour] += 1
 
-                    browser = ua.browser.family or "Unknown"
-                    os_family = ua.os.family or "Unknown"
-                    browser_counts[browser] += 1
-                    os_counts[os_family] += 1
-                    hour = entry.request_time.hour
-                    hourly_visits[hour] += 1
+        query = urlparse(request_parts[1]).query
+        if query:
+            params = parse_qs(query)
+            if 'utm_source' in params:
+                utm_source = params['utm_source'][0]
+                utm_source_counts[utm_source] += 1
 
-                    query = urlparse(request_parts[1]).query
-                    if query:
-                        params = parse_qs(query)
-                        if 'utm_source' in params:
-                            utm_source = params['utm_source'][0]
-                            utm_source_counts[utm_source] += 1
+        if any(path.startswith(ex) for ex in config['excluded_prefixes']):
+            continue
 
-                    if any(path.startswith(ex) for ex in config['excluded_prefixes']):
-                        continue
+        if ua.is_bot:
+            daily_scraper_pageviews[date_str] += 1
+        else:
+            daily_pageviews[date_str] += 1
+            daily_unique_visitors[date_str].add(entry.remote_host)
+            if any(path.startswith(bp) for bp in config['blog_post_prefixes']):
+                clean_name = clean_post_name(path, config['blog_post_prefixes'])
+                blog_post_views[clean_name] += 1
+            try:
+                country = reader.country(entry.remote_host)
+                country_name = country.country.name or "Unknown"
+            except:
+                country_name = "Unknown"
+            if country_name != "Unknown":
+                country_visits[country_name] += 1
 
-                    if ua.is_bot:
-                        daily_scraper_pageviews[date_str] += 1
-                    else:
-                        daily_pageviews[date_str] += 1
-                        daily_unique_visitors[date_str].add(entry.remote_host)
-                        if any(path.startswith(bp) for bp in config['blog_post_prefixes']):
-                            clean_name = clean_post_name(path, config['blog_post_prefixes'])
-                            blog_post_views[clean_name] += 1
-                        try:
-                            country = reader.country(entry.remote_host)
-                            country_name = country.country.name or "Unknown"
-                        except:
-                            country_name = "Unknown"
-                        if country_name != "Unknown":
-                            country_visits[country_name] += 1
+        twenty_four_hours_ago = datetime.now() - timedelta(hours=24)
+        if path in config['rss_feed_urls']:
+            if entry.request_time.replace(tzinfo=None) >= twenty_four_hours_ago:
+                rss_user_agent_counts[user_agent_str] += 1
+            if not ua.is_bot:
+                daily_rss_unique_ips[date_str].add(entry.remote_host)
 
-                    twenty_four_hours_ago = datetime.now() - timedelta(hours=24)
-                    if path in config['rss_feed_urls']:
-                        if entry.request_time.replace(tzinfo=None) >= twenty_four_hours_ago:
-                            rss_user_agent_counts[user_agent_str] += 1
-                        if not ua.is_bot:
-                            daily_rss_unique_ips[date_str].add(entry.remote_host)
-
-                except apachelogs.InvalidEntryError:
-                    continue
-
-    today = datetime.now().date()
-    dates = [today - timedelta(days=i) for i in range(7)][::-1]  # 7 days, Feb 17-23
     date_strs = [d.strftime('%Y-%m-%d') for d in dates]
     daily_unique_visitors_counts = {d: len(s) for d, s in daily_unique_visitors.items()}
     daily_rss_unique_counts = {d: len(s) for d, s in daily_rss_unique_ips.items()}
