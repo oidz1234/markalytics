@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Markalytics Dashboard</title>
+    <title>Marks Analytics</title>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
     <style>
         body {
@@ -138,7 +138,7 @@
     </style>
 </head>
 <body>
-    <h1>Markalytics Dashboard</h1>
+    <h1><a href="https://mark.mcnally.je">Marks</a> Analytics</h1>
 
     <div class="chart-container" id="visitor-trend"></div>
     <div class="chart-grid">
@@ -231,7 +231,7 @@
             // Visitor Trend
             var visitorTrendChart = echarts.init(document.getElementById('visitor-trend'));
             visitorTrendChart.setOption({
-                title: { text: '30-Day Visitor Trend', left: 'center', textStyle: { color: '#ff00ff', fontSize: 18, shadowColor: '#000', shadowOffsetX: 2, shadowOffsetY: 2, shadowBlur: 5 } },
+                title: { text: '7-Day Visitor Trend', left: 'center', textStyle: { color: '#ff00ff', fontSize: 18, shadowColor: '#000', shadowOffsetX: 2, shadowOffsetY: 2, shadowBlur: 5 } },
                 tooltip: {},
                 xAxis: { type: 'category', data: {{ daily_dates | tojson }}, axisLabel: { rotate: 45, color: '#00ffff' } },
                 yAxis: { type: 'value', name: 'Unique Visitors', nameTextStyle: { color: '#ffcc00' }, axisLabel: { color: '#ffcc00' }, min: 0, axisTick: { show: false }, splitLine: { show: true, lineStyle: { color: '#333' } } },
