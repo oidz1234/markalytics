@@ -20,14 +20,12 @@ def clean_post_name(path, prefixes):
     return path
 
 def get_date_range(days_back=7):
-    """Generate date strings for the last 7 days in Apache log format."""
     today = datetime.now().date()
     dates = [today - timedelta(days=i) for i in range(days_back)][::-1]
     date_patterns = [d.strftime(r'\[%d/%b/%Y') for d in dates]
     return dates, date_patterns
 
-def process_log_file(log_file, date_patterns, seven_days_ago, geoip_db_path):
-    """Process a single log file, returning stats for matching entries."""
+def process_log_file(log_file, date_patterns, seven_days_ago, geoip_db_path, config):
     local_unique_visitors = defaultdict(set)
     local_pageviews = defaultdict(int)
     local_blog_views = defaultdict(int)
@@ -45,10 +43,10 @@ def process_log_file(log_file, date_patterns, seven_days_ago, geoip_db_path):
     log_entry_regex = re.compile(full_pattern)
     
     parser = apachelogs.LogParser(apachelogs.COMBINED)
-    reader = geoip2.database.Reader(geoip_db_path)  # Use config path
+    reader = geoip2.database.Reader(geoip_db_path)
     
     with open(log_file, 'r') as f:
-        chunk_size = 65536  # 64KB
+        chunk_size = 65536
         buffer = ""
         while True:
             chunk = f.read(chunk_size)
@@ -58,7 +56,7 @@ def process_log_file(log_file, date_patterns, seven_days_ago, geoip_db_path):
                                  local_unique_visitors, local_pageviews, local_blog_views,
                                  local_country_visits, local_rss_ips, local_scraper_views,
                                  local_browser_counts, local_os_counts, local_utm_counts,
-                                 local_rss_ua_counts, local_hourly_visits, seven_days_ago)
+                                 local_rss_ua_counts, local_hourly_visits, seven_days_ago, config)
                 break
             buffer += chunk
             lines = buffer.split('\n')
@@ -68,7 +66,7 @@ def process_log_file(log_file, date_patterns, seven_days_ago, geoip_db_path):
                               local_unique_visitors, local_pageviews, local_blog_views,
                               local_country_visits, local_rss_ips, local_scraper_views,
                               local_browser_counts, local_os_counts, local_utm_counts,
-                              local_rss_ua_counts, local_hourly_visits, seven_days_ago)
+                              local_rss_ua_counts, local_hourly_visits, seven_days_ago, config)
     
     return (local_unique_visitors, local_pageviews, local_blog_views, local_country_visits,
             local_rss_ips, local_scraper_views, local_browser_counts, local_os_counts,
@@ -76,8 +74,7 @@ def process_log_file(log_file, date_patterns, seven_days_ago, geoip_db_path):
 
 def process_buffer(line, regex, parser, reader, unique_visitors, pageviews, blog_views,
                   country_visits, rss_ips, scraper_views, browser_counts, os_counts,
-                  utm_counts, rss_ua_counts, hourly_visits, seven_days_ago):
-    """Helper to process a single line if it matches the regex."""
+                  utm_counts, rss_ua_counts, hourly_visits, seven_days_ago, config):
     if regex.search(line):
         try:
             entry = parser.parse(line)
@@ -104,7 +101,7 @@ def process_buffer(line, regex, parser, reader, unique_visitors, pageviews, blog
                 if 'utm_source' in params:
                     utm_counts[params['utm_source'][0]] += 1
 
-            if any(path.startswith(ex) for ex in ['/static/']):  # Placeholder, replace with config
+            if any(path.startswith(ex) for ex in config['excluded_prefixes']):
                 return
 
             if ua.is_bot:
@@ -112,8 +109,8 @@ def process_buffer(line, regex, parser, reader, unique_visitors, pageviews, blog
             else:
                 pageviews[date_str] += 1
                 unique_visitors[date_str].add(entry.remote_host)
-                if any(path.startswith(bp) for bp in ['/blog/']):  # Placeholder, replace with config
-                    clean_name = clean_post_name(path, ['/blog/'])
+                if any(path.startswith(bp) for bp in config['blog_post_prefixes']):
+                    clean_name = clean_post_name(path, config['blog_post_prefixes'])
                     blog_views[clean_name] += 1
                 try:
                     country = reader.country(entry.remote_host)
@@ -124,7 +121,7 @@ def process_buffer(line, regex, parser, reader, unique_visitors, pageviews, blog
                     pass
 
             twenty_four_hours_ago = datetime.now() - timedelta(hours=24)
-            if path in ['/rss/']:  # Placeholder, replace with config
+            if path in config['rss_feed_urls']:
                 if entry.request_time.replace(tzinfo=None) >= twenty_four_hours_ago:
                     rss_ua_counts[user_agent_str] += 1
                 if not ua.is_bot:
@@ -133,7 +130,6 @@ def process_buffer(line, regex, parser, reader, unique_visitors, pageviews, blog
             pass
 
 def merge_stats(stats_list):
-    """Merge stats from multiple threads."""
     merged = [defaultdict(set), defaultdict(int), defaultdict(int), defaultdict(int),
               defaultdict(set), defaultdict(int), defaultdict(int), defaultdict(int),
               defaultdict(int), defaultdict(int), defaultdict(int)]
@@ -153,7 +149,7 @@ def main():
     with open('config.json') as f:
         config = json.load(f)
 
-    geoip_db_path = config['geoip_db']  # Use the path from your config
+    geoip_db_path = config['geoip_db']
     base_log_path = config['log_files'][0]
     directory = os.path.dirname(base_log_path) or '.'
     seven_days_ago_timestamp = (datetime.now() - timedelta(days=6)).timestamp()
@@ -166,13 +162,17 @@ def main():
     seven_days_ago = datetime.now() - timedelta(days=6)
 
     with ThreadPoolExecutor() as executor:
-        futures = [executor.submit(process_log_file, log_file, date_patterns, seven_days_ago, geoip_db_path)
+        futures = [executor.submit(process_log_file, log_file, date_patterns, seven_days_ago, geoip_db_path, config)
                    for log_file in log_files]
         results = [future.result() for future in futures]
 
     (daily_unique_visitors, daily_pageviews, blog_post_views, country_visits,
      daily_rss_unique_ips, daily_scraper_pageviews, browser_counts, os_counts,
      utm_source_counts, rss_user_agent_counts, hourly_visits) = merge_stats(results)
+
+    # Debug prints to check data
+    print("Blog post views:", dict(blog_post_views))
+    print("RSS unique IPs:", {k: len(v) for k, v in daily_rss_unique_ips.items()})
 
     date_strs = [d.strftime('%Y-%m-%d') for d in dates]
     daily_visitors = [len(daily_unique_visitors.get(d, set())) for d in date_strs]
